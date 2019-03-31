@@ -17,11 +17,14 @@
 
   ; void -> void
   (define (cleanup)
-    (begin
-      (close-input-port (client))
-      (close-output-port (client))
-      (close-input-port (server))
-      (close-output-port (server))))
+    (let ((client-port (client))
+          (server-port (server)))
+      (begin
+        (close-input-port client-port)
+        (close-output-port client-port)
+        (when (port? server-port)
+          (close-input-port (server))
+          (close-output-port (server))))))
 
   ; Request -> void
   (define (forward-request request)
@@ -67,13 +70,14 @@
 
   ; void -> void
   (define (handle-connection)
-    (let ((request (read-request (client))))
-      (when request
-        (let ((forwarded-request (forward-request (apply-rules-to-request request)))
-              (response (read-response (server))))
-          (when response
-            (forward-response (apply-rules-to-response response) forwarded-request)))
-        (cleanup))))
+    (begin
+      (let ((request (read-request (client))))
+        (when request
+          (let ((forwarded-request (forward-request (apply-rules-to-request request)))
+                (response (read-response (server))))
+            (when response
+              (forward-response (apply-rules-to-response response) forwarded-request)))))
+      (cleanup)))
 
   ; TODO: signals
   (define (serve-forever listener)
