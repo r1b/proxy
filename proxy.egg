@@ -1,0 +1,7 @@
+((components (extension proxy))
+ (version 1.0)
+ (license "BSD")
+ (author "Robert C Jensen")
+ (synopsis "HTTP proxy")
+ (dependencies intarweb srfi-18 tcp6)
+ (test-dependencies test))
