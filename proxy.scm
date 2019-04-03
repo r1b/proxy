@@ -13,6 +13,8 @@
   ; a thread-local storage is a pair of pairs:
   ; ((client-in . client-out) . (or (server-in . server-out) void))
 
+  ; FIXME dedupe
+
   ; void -> Port
   (define (client-in) (car (car (thread-specific (current-thread)))))
 
@@ -31,13 +33,38 @@
 
   ; --------------------------------------------------------------------------
 
-  ; i/o
+  ; utilities for dealing with bodies
+  ; FIXME dedupe
 
-  (define (read-with-buffer port)
-    (read-string #f port))
+  (define (chunked-request? request)
+    (memq 'chunked (header-values 'transfer-encoding (request-headers request))))
 
-  (define (write-with-buffer chunk port)
-    (write-string chunk #f port))
+  (define (request-length request)
+    (header-value 'content-length (request-headers request)))
+
+  (define (chunked-response? response)
+    (memq 'chunked (header-values 'transfer-encoding (response-headers response))))
+
+  (define (response-length response)
+    (header-value 'content-length (response-headers response)))
+
+  ; XXX This is confusing as fuck but we need the original request / response
+  ;     so that intarweb will handle chunking for us. Revisit this.
+
+  (define (write-request-body server-request proxy-request)
+    (display (if (chunked-request? server-request)
+                 (read-string #f (request-port proxy-request))
+                 (read-string (request-length proxy-request)
+                              (request-port proxy-request)))
+             (request-port server-request)))
+
+  (define (write-response-body client-response proxy-response)
+    (display (if (chunked-response? client-response)
+                 (read-string #f (response-port proxy-response))
+                 (read-string (response-length proxy-response)
+                              (response-port proxy-response)))
+             (response-port client-response)))
+
 
   ; --------------------------------------------------------------------------
 
@@ -52,30 +79,28 @@
         (close-output-port (server-out)))))
 
   ; Request -> void
-  (define (forward-request request)
-    (let ((host-port (car (header-values 'host (request-headers request)))))
+  (define (forward-request proxy-request)
+    (let ((host-port (car (header-values 'host (request-headers proxy-request)))))
       (let*-values (((host port) (values (car host-port) (cdr host-port)))
                     ((in out) (tcp-connect host (or port 80))))
         (begin
-          ; FIXME
           (thread-specific-set! (current-thread)
                                 (cons (cons (client-in) (client-out))
                                       (cons in out)))
           (let* ((server-request
-                   (write-request (update-request request port: (server-out)))))
-            (if ((request-has-message-body?) server-request)
-                (begin
-                  (write-string (read-string #f (client-in)) #f (server-out))
-                  (finish-request-body server-request))
-                server-request))))))
+                   (write-request (update-request proxy-request port: (server-out)))))
+            (begin
+              (when ((request-has-message-body?) server-request)
+                (write-request-body server-request proxy-request)
+                (finish-request-body server-request))
+              server-request))))))
 
   ; Response -> void
-  (define (forward-response response request)
-    (let* ((proxy-response (write-response (update-response response port: (client-out))))
-           (_ (when ((response-has-message-body-for-request?) proxy-response request)
-                  ; FIXME this is soooo slow
-                  (write-string (read-string #f (server-in)) #f (client-out))
-                (finish-response-body proxy-response))))
+  (define (forward-response proxy-response request)
+    (let* ((client-response (write-response (update-response proxy-response port: (client-out))))
+           (_ (when ((response-has-message-body-for-request?) client-response request)
+                (write-response-body client-response proxy-response)
+                (finish-response-body client-response))))
       (void)))
 
   ; TODO: implement `trap & modify`
