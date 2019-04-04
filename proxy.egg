@@ -7,5 +7,5 @@
  (license "BSD")
  (author "Robert C Jensen")
  (synopsis "HTTP proxy")
- (dependencies intarweb srfi-18 tcp6)
+ (dependencies intarweb srfi-18 tcp6 uri-common)
  (test-dependencies test))

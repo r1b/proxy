@@ -14,6 +14,7 @@
   ; ((client-in . client-out) . (or (server-in . server-out) void))
 
   ; FIXME dedupe
+  ; FIXME try make-bidirectional-port
 
   ; void -> Port
   (define (client-in) (car (car (thread-specific (current-thread)))))
@@ -33,38 +34,18 @@
 
   ; --------------------------------------------------------------------------
 
-  ; utilities for dealing with bodies
-  ; FIXME dedupe
+  (define (message-length headers)
+    (header-value 'content-length headers))
 
-  (define (chunked-request? request)
-    (memq 'chunked (header-values 'transfer-encoding (request-headers request))))
+  (define (chunked-message? headers)
+    (memq 'chunked (header-values 'transfer-encoding headers)))
 
-  (define (request-length request)
-    (header-value 'content-length (request-headers request)))
-
-  (define (chunked-response? response)
-    (memq 'chunked (header-values 'transfer-encoding (response-headers response))))
-
-  (define (response-length response)
-    (header-value 'content-length (response-headers response)))
-
-  ; XXX This is confusing as fuck but we need the original request / response
-  ;     so that intarweb will handle chunking for us. Revisit this.
-
-  (define (write-request-body server-request proxy-request)
-    (display (if (chunked-request? server-request)
-                 (read-string #f (request-port proxy-request))
-                 (read-string (request-length proxy-request)
-                              (request-port proxy-request)))
-             (request-port server-request)))
-
-  (define (write-response-body client-response proxy-response)
-    (display (if (chunked-response? client-response)
-                 (read-string #f (response-port proxy-response))
-                 (read-string (response-length proxy-response)
-                              (response-port proxy-response)))
-             (response-port client-response)))
-
+  (define (write-message-body body-length chunkedp input-port output-port)
+    (display (if chunkedp
+                 (read-string #f input-port)
+                 (read-string body-length
+                              input-port))
+             output-port))
 
   ; --------------------------------------------------------------------------
 
@@ -91,7 +72,10 @@
                    (write-request (update-request proxy-request port: (server-out)))))
             (begin
               (when ((request-has-message-body?) server-request)
-                (write-request-body server-request proxy-request)
+                (write-message-body (message-length (request-headers server-request))
+                                    (chunked-message? (request-headers server-request))
+                                    (request-port proxy-request)
+                                    (request-port server-request))
                 (finish-request-body server-request))
               server-request))))))
 
@@ -99,7 +83,10 @@
   (define (forward-response proxy-response request)
     (let* ((client-response (write-response (update-response proxy-response port: (client-out))))
            (_ (when ((response-has-message-body-for-request?) client-response request)
-                (write-response-body client-response proxy-response)
+                (write-message-body (message-length (response-headers client-response))
+                                    (chunked-message? (response-headers client-response))
+                                    (response-port proxy-response)
+                                    (response-port client-response))
                 (finish-response-body client-response))))
       (void)))
 
