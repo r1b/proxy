@@ -10,27 +10,23 @@
 
   ; --------------------------------------------------------------------------
 
-  ; a thread-local storage is a pair of pairs:
-  ; ((client-in . client-out) . (or (server-in . server-out) void))
+  ; FIXME: Connection: Keep-Alive
 
-  ; FIXME dedupe
-  ; FIXME try make-bidirectional-port
+  (define-record session client server)
 
-  ; void -> Port
-  (define (client-in) (car (car (thread-specific (current-thread)))))
+  (define (current-session) (thread-specific (current-thread)))
+  (define (current-client) (session-client (current-session)))
+  (define (current-server) (session-server (current-session)))
 
-  ; void -> Port
-  (define (client-out) (cdr (car (thread-specific (current-thread)))))
-
-  ; void -> Port
-  (define (server-in)
-    (let ((server-ports (cdr (thread-specific (current-thread)))))
-      (if (pair? server-ports) (car server-ports) (void))))
-
-  ; void -> Port
-  (define (server-out)
-    (let ((server-ports (cdr (thread-specific (current-thread)))))
-      (if (pair? server-ports) (cdr server-ports) (void))))
+  ; void -> void
+  (define (cleanup)
+      (begin
+        (close-input-port (current-client))
+        (close-output-port (current-client))
+        (when (port? (current-server))
+          (close-input-port (current-server)))
+        (when (port? (current-server))
+          (close-output-port (current-server)))))
 
   ; --------------------------------------------------------------------------
 
@@ -42,6 +38,7 @@
 
   (define (write-message-body body-length chunkedp input-port output-port)
     (display (if chunkedp
+                 ; XXX: We delegate chunk handling to intarweb
                  (read-string #f input-port)
                  (read-string body-length
                               input-port))
@@ -49,15 +46,6 @@
 
   ; --------------------------------------------------------------------------
 
-  ; void -> void
-  (define (cleanup)
-    (begin
-      (close-input-port (client-in))
-      (close-output-port (client-out))
-      (when (port? (server-in))
-        (close-input-port (server-in)))
-      (when (port? (server-out))
-        (close-output-port (server-out)))))
 
   ; Request -> void
   (define (forward-request proxy-request)
@@ -66,10 +54,10 @@
                     ((in out) (tcp-connect host (or port 80))))
         (begin
           (thread-specific-set! (current-thread)
-                                (cons (cons (client-in) (client-out))
-                                      (cons in out)))
-          (let* ((server-request
-                   (write-request (update-request proxy-request port: (server-out)))))
+                                (make-session (current-client)
+                                              (make-bidirectional-port in out)))
+          (let* ((server-request (write-request (update-request proxy-request
+                                                                port: (current-server)))))
             (begin
               (when ((request-has-message-body?) server-request)
                 (write-message-body (message-length (request-headers server-request))
@@ -81,7 +69,8 @@
 
   ; Response -> void
   (define (forward-response proxy-response request)
-    (let* ((client-response (write-response (update-response proxy-response port: (client-out))))
+    (let* ((client-response (write-response (update-response proxy-response
+                                                             port: (current-client))))
            (_ (when ((response-has-message-body-for-request?) client-response request)
                 (write-message-body (message-length (response-headers client-response))
                                     (chunked-message? (response-headers client-response))
@@ -113,10 +102,10 @@
   ; void -> void
   (define (handle-connection)
     (begin
-      (let ((request (read-request (client-in))))
+      (let ((request (read-request (current-client))))
         (when request
           (let ((forwarded-request (forward-request (apply-rules-to-request request)))
-                (response (read-response (server-in))))
+                (response (read-response (current-server))))
             (when response
               (forward-response (apply-rules-to-response response) forwarded-request)))))
       (cleanup)))
@@ -126,7 +115,7 @@
     (let-values (((in out) (tcp-accept listener)))
       (let ((t (make-thread handle-connection 'handle-connection)))
         (begin
-          (thread-specific-set! t (cons (cons in out) (void)))
+          (thread-specific-set! t (make-session (make-bidirectional-port in out) (void)))
           (thread-start! t)
           (serve-forever listener)))))
 
