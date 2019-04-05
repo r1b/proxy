@@ -1,8 +1,8 @@
 ((components
-  (extension proxy)
-  (program proxy-cli
-           (component-dependencies proxy)
-           (source "bin/proxy.scm")))
+   (extension proxy)
+   (program proxy-cli
+            (component-dependencies proxy)
+            (source "bin/proxy.scm")))
  (version 1.0)
  (license "BSD")
  (author "Robert C Jensen")

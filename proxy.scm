@@ -10,6 +10,7 @@
 
   ; --------------------------------------------------------------------------
 
+  ; i/o
   ; FIXME: Connection: Keep-Alive
 
   (define-record session client server)
@@ -30,6 +31,8 @@
 
   ; --------------------------------------------------------------------------
 
+  ; message utilities
+
   (define (message-length headers)
     (header-value 'content-length headers))
 
@@ -46,6 +49,7 @@
 
   ; --------------------------------------------------------------------------
 
+  ; core
 
   ; Request -> void
   (define (forward-request proxy-request)
@@ -79,6 +83,10 @@
                 (finish-response-body client-response))))
       (void)))
 
+  ; --------------------------------------------------------------------------
+
+  ; rules
+
   ; TODO: implement `trap & modify`
   ; `trap` will be like:
   ; * if host matches whatever or request line matches whatever then trap
@@ -93,10 +101,9 @@
   ; Response -> Response
   (define (apply-rules-to-response response) response)
 
-  ; TODO: implement CONNECT for e.g HTTPS
-  ; XXX: intarweb (perhaps wisely) does not support CONNECT
-  ; we can add this ourselves
+  ; --------------------------------------------------------------------------
 
+  ; process / thread entry points
   ; FIXME: Cleanup client / server i/o on exceptions
 
   ; void -> void
