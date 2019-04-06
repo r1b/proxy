@@ -43,6 +43,8 @@
     (display (if chunkedp
                  ; XXX: We delegate chunk handling to intarweb
                  (read-string #f input-port)
+                 ; XXX: Reading #f or any l > Content-Length blocks!
+                 ; FIXME: Can read-buffered help?
                  (read-string body-length
                               input-port))
              output-port))
