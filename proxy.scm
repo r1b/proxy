@@ -3,10 +3,10 @@
           (chicken condition)
           (chicken io)
           (chicken port)
+          (chicken tcp)
           intarweb
           scheme
-          srfi-18
-          tcp6)
+          srfi-18)
 
   ; --------------------------------------------------------------------------
 
