@@ -32,10 +32,19 @@
   ; --------------------------------------------------------------------------
 
   ; message utilities
-  ; FIXME just inline this
 
-  (define (write-message-body input-port output-port)
-    (display (read-string #f input-port)
+  (define (message-length headers)
+    (header-value 'content-length headers))
+
+  (define (chunked-message? headers)
+    (memq 'chunked (header-values 'transfer-encoding headers)))
+
+  (define (write-message-body body-length chunkedp input-port output-port)
+    (display (if chunkedp
+                 ; XXX: We delegate chunk handling to intarweb
+                 (read-string #f input-port)
+                 (read-string body-length
+                              input-port))
              output-port))
 
   ; --------------------------------------------------------------------------
@@ -55,7 +64,9 @@
                                                                 port: (current-server)))))
             (begin
               (when ((request-has-message-body?) server-request)
-                (write-message-body (request-port proxy-request)
+                (write-message-body (message-length (request-headers server-request))
+                                    (chunked-message? (request-headers server-request))
+                                    (request-port proxy-request)
                                     (request-port server-request))
                 (finish-request-body server-request))
               server-request))))))
@@ -65,7 +76,9 @@
     (let* ((client-response (write-response (update-response proxy-response
                                                              port: (current-client))))
            (_ (when ((response-has-message-body-for-request?) client-response request)
-                (write-message-body (response-port proxy-response)
+                (write-message-body (message-length (response-headers client-response))
+                                    (chunked-message? (response-headers client-response))
+                                    (response-port proxy-response)
                                     (response-port client-response))
                 (finish-response-body client-response))))
       (void)))
