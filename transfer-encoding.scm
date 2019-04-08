@@ -1,0 +1,5 @@
+(module transfer-encoding (encode-deflate encode-gzip decode-deflate decode-gzip)
+  (define (encode-deflate body) 42)
+  (define (encode-gzip body) 42)
+  (define (decode-deflate body) 42)
+  (define (decode-gzip body) 42))
